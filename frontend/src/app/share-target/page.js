@@ -1,21 +1,23 @@
 'use client';
 
-import { useEffect, Suspense } from 'react'; // <-- Import Suspense here
+// Make sure to import Suspense from React!
+import { useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-// This is the inner component that uses the search params
+// This is the URL of your deployed backend
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stashbackend.onrender.com';
+
 function ShareTargetComponent() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
     const url = searchParams.get('url');
     const text = searchParams.get('text');
-    const sharedContent = url || text;
+    const sharedContent = url || text; // Prefer URL
 
     if (sharedContent) {
-      console.log("Got content:", sharedContent);
-
-      fetch('http://127.0.0.1:8000/v1/capture', {
+      // Send the shared content to your backend
+      fetch(`${API_URL}/v1/capture`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -23,31 +25,23 @@ function ShareTargetComponent() {
           content: sharedContent,
         }),
       })
-      .then(res => res.json())
-      .then(data => {
-        console.log('Saved to stash:', data);
-        window.close(); // Close the share popup
-      })
-      .catch(err => {
-        console.error('Failed to save:', err);
-        window.close(); // Also close on failure
-      });
+      .then(() => window.close()) // Close the share window on success
+      .catch(() => window.close()); // Also close on failure
     } else {
-      window.close();
+      window.close(); // No content, just close
     }
   }, [searchParams]);
 
   return (
-    <div style={{ padding: '20px' }}>
+    <div style={{ padding: '20px', textAlign: 'center' }}>
       <h1>Saving to Stash...</h1>
     </div>
   );
 }
 
-// This is the default export for the page
+// You MUST wrap the component in <Suspense> for useSearchParams to work
 export default function ShareTargetPage() {
   return (
-    // We wrap the component in Suspense
     <Suspense fallback={<div>Loading...</div>}>
       <ShareTargetComponent />
     </Suspense>
