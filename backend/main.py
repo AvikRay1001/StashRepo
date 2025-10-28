@@ -274,7 +274,7 @@ async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
     """
     try:
         # Verify the token using the session API
-        session = clerk_client.sessions.verify_token(token=token)
+        session = clerk_client.sessions.verify(token=token)
         
         # Return the user ID from the session object
         return session.user_id 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from "@clerk/nextjs";
+import { UserButton } from "@clerk/nextjs";
 
 // IMPORTANT: This is the URL of your deployed backend
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stashbackend.onrender.com';
