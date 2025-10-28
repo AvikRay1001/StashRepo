@@ -21,7 +21,7 @@ app = FastAPI()
 # to make requests to this FastAPI server.
 origins = [
     "http://localhost:3000",
-    "https://stash-frontend-chi.vercel.app/"  # Your Next.js local dev URL
+    "https://stash-frontend-chi.vercel.app"  # Your Next.js local dev URL
     # Add your deployed frontend URL here later
     # e.g., "https://your-frontend-app.vercel.app" 
 ]
