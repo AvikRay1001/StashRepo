@@ -103,8 +103,8 @@ from fastapi.middleware.cors import CORSMiddleware # For CORS
 from fastapi.security import OAuth2PasswordBearer
 
 # --- NEW CLERK IMPORTS ---
-from clerk_sdk import Clerk
-from clerk_sdk.jwt import JWT
+from clerk_backend_api import Clerk
+
 # -------------------------
 
 # Load keys from .env file
@@ -120,7 +120,7 @@ if not CLERK_SECRET_KEY:
 
 # --- CLIENT SETUPS ---
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-clerk = Clerk(secret_key=CLERK_SECRET_KEY)
+clerk = Clerk(CLERK_SECRET_KEY)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 # ---------------------
 
