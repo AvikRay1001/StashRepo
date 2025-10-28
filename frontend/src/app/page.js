@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAuth } from "@clerk/nextjs";
 
 // IMPORTANT: This is the URL of your deployed backend
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stashbackend.onrender.com';
@@ -10,12 +11,18 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [newItemUrl, setNewItemUrl] = useState('');
+  const { getToken } = useAuth();
 
   // Function to fetch all items
   async function fetchItems() {
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/v1/library`);
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/v1/library`, {
+        headers: {
+          'Authorization': `Bearer ${token}` // Add the auth header
+        }
+      });
       if (!res.ok) {
         throw new Error('Failed to fetch from backend. Is it awake?');
       }
@@ -38,9 +45,13 @@ export default function Home() {
     if (!newItemUrl.trim()) return;
 
     try {
+      const token = await getToken(); // Get the token
       const res = await fetch(`${API_URL}/v1/capture`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Add the auth header
+        },
         body: JSON.stringify({
           type: 'url',
           content: newItemUrl,
@@ -59,6 +70,11 @@ export default function Home() {
 
   return (
     <main className="p-8 max-w-2xl mx-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">My Stash</h1>
+        <UserButton afterSignOutUrl="/sign-in" />
+      </div>
+
       <h1 className="text-3xl font-bold mb-6">My Stash</h1>
 
       {/* --- TEST FORM --- */}
