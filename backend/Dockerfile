@@ -53,6 +53,15 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --d
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
+# Create symlink for chromedriver if it doesn't exist (Chrome comes with chromedriver)
+RUN if [ -f /usr/bin/google-chrome ]; then \
+        CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+\.\d+' | head -1) && \
+        echo "Chrome version: $CHROME_VERSION" && \
+        if [ ! -f /usr/bin/chromedriver ] && [ -f /usr/lib/chromium-browser/chromedriver ]; then \
+            ln -s /usr/lib/chromium-browser/chromedriver /usr/bin/chromedriver; \
+        fi; \
+    fi || echo "ChromeDriver symlink creation skipped (will use ChromeDriverManager)"
+
 # Copy requirements file
 COPY requirements.txt .
 

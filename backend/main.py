@@ -315,7 +315,7 @@ def get_text_from_url(url):
     # Additional options for server environments
     options.add_argument('--disable-setuid-sandbox')
     options.add_argument('--remote-debugging-port=9222')  # Allow remote debugging if needed
-    options.add_argument('--single-process')  # Run in single process mode (helps with resource limits)
+    # Note: --single-process can cause stability issues, removed for better reliability
     
     # Set preferences
     options.add_experimental_option('excludeSwitches', ['enable-logging'])
@@ -323,53 +323,126 @@ def get_text_from_url(url):
 
     driver = None
     try:
-        # Try to use ChromeDriverManager first
+        import os
+        import shutil
+        
+        # Find Chrome/Chromium binary
+        chrome_paths = [
+            '/usr/bin/chromium-browser',
+            '/usr/bin/chromium',
+            '/usr/bin/google-chrome',
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        ]
+        
+        chrome_binary = None
+        for chrome_path in chrome_paths:
+            if os.path.exists(chrome_path) and os.access(chrome_path, os.X_OK):
+                chrome_binary = chrome_path
+                print(f"Found Chrome at {chrome_path}")
+                options.binary_location = chrome_path
+                break
+        
+        if not chrome_binary:
+            raise Exception("Could not find Chrome/Chromium binary. Falling back to BeautifulSoup.")
+        
+        # Try to get chromedriver
+        chromedriver_path = None
+        
+        # Method 1: Try ChromeDriverManager
         try:
-            service = ChromeService(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=options)
-        except Exception as driver_error:
-            print(f"ChromeDriverManager failed: {driver_error}")
-            # Fallback: Try to find Chrome/Chromium in common locations
-            import os
-            chrome_paths = [
-                '/usr/bin/chromium-browser',
-                '/usr/bin/chromium',
-                '/usr/bin/google-chrome',
-                '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-                'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-                'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+            chromedriver_path = ChromeDriverManager().install()
+            print(f"ChromeDriverManager installed chromedriver at: {chromedriver_path}")
+        except Exception as manager_error:
+            print(f"ChromeDriverManager failed: {manager_error}")
+            # Method 2: Try to find chromedriver in common locations
+            chromedriver_paths = [
+                '/usr/bin/chromedriver',
+                '/usr/local/bin/chromedriver',
+                shutil.which('chromedriver'),
             ]
-            
-            chrome_found = False
-            for chrome_path in chrome_paths:
-                if os.path.exists(chrome_path):
-                    options.binary_location = chrome_path
-                    print(f"Found Chrome at {chrome_path}")
-                    # Try to create driver without service (may use system chromedriver)
-                    try:
-                        driver = webdriver.Chrome(options=options)
-                        chrome_found = True
-                        break
-                    except:
-                        continue
-            
-            if not chrome_found:
-                raise Exception("Could not find Chrome/Chromium binary. Falling back to BeautifulSoup.")
+            for path in chromedriver_paths:
+                if path and os.path.exists(path) and os.access(path, os.X_OK):
+                    chromedriver_path = path
+                    print(f"Found chromedriver at: {path}")
+                    break
+        
+        if not chromedriver_path:
+            raise Exception("Could not find chromedriver. Falling back to BeautifulSoup.")
+        
+        # Create service with chromedriver
+        service = ChromeService(chromedriver_path)
+        
+        # Add retry logic for driver creation
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                driver = webdriver.Chrome(service=service, options=options)
+                print("Successfully created Chrome WebDriver")
+                break
+            except Exception as driver_error:
+                if attempt == max_retries - 1:
+                    raise driver_error
+                print(f"Driver creation attempt {attempt + 1} failed: {driver_error}, retrying...")
+                time.sleep(1)
 
+        # Set timeouts
         driver.set_page_load_timeout(30)
+        driver.implicitly_wait(5)  # Wait for elements to appear
+        
+        # Navigate to URL
+        print(f"Loading URL: {url}")
         driver.get(url)
 
         # Wait for JavaScript to potentially load content
-        time.sleep(3)
+        # Increase wait time for dynamic content
+        time.sleep(5)
 
         # Extract text from the body tag
-        body_element = driver.find_element(By.TAG_NAME, 'body')
-        text = body_element.text.strip()
-        lines = (line.strip() for line in text.splitlines())
-        cleaned_text = '\n'.join(line for line in lines if line)
+        try:
+            # Wait a bit more for dynamic content
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            
+            # Wait for body to be present
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, 'body'))
+            )
+            
+            body_element = driver.find_element(By.TAG_NAME, 'body')
+            text = body_element.text.strip()
+            
+            if not text or len(text.strip()) < 10:
+                print("Warning: Got minimal or no text from Selenium, trying page_source")
+                # Fallback: get text from page source
+                from bs4 import BeautifulSoup as BS
+                soup = BS(driver.page_source, 'html.parser')
+                for element in soup(["script", "style", "nav", "footer", "header", "aside", "form", "button"]):
+                    element.decompose()
+                main_content = soup.find('main') or soup.find('article') or soup.find('body')
+                text = main_content.get_text(separator='\n', strip=True) if main_content else ''
+            
+            lines = (line.strip() for line in text.splitlines())
+            cleaned_text = '\n'.join(line for line in lines if line)
 
-        print(f"Successfully loaded URL with Selenium. Got {len(cleaned_text)} chars.")
-        return cleaned_text[:15000]
+            print(f"Successfully loaded URL with Selenium. Got {len(cleaned_text)} chars.")
+            return cleaned_text[:15000]
+        except Exception as extract_error:
+            print(f"Error extracting text: {extract_error}")
+            # Try one more time with page_source
+            try:
+                from bs4 import BeautifulSoup as BS
+                soup = BS(driver.page_source, 'html.parser')
+                for element in soup(["script", "style"]):
+                    element.decompose()
+                text = soup.get_text(separator='\n', strip=True)
+                lines = (line.strip() for line in text.splitlines())
+                cleaned_text = '\n'.join(line for line in lines if line)
+                print(f"Extracted text from page_source. Got {len(cleaned_text)} chars.")
+                return cleaned_text[:15000]
+            except:
+                raise extract_error
 
     except WebDriverException as e:
         print(f"Selenium WebDriver error for URL {url}: {e}")
