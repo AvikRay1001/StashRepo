@@ -180,7 +180,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import WebDriverException, TimeoutException
+from selenium.common.exceptions import WebDriverException
 import time
 
 # --- Load keys from .env file ---
@@ -202,7 +202,7 @@ app = FastAPI()
 # --- CORS Middleware ---
 origins = [
     "http://localhost:3000",
-    "https://stashfronrtend.vercel.app"
+    "https://stash-frontend-chi.vercel.app"
 ]
 
 app.add_middleware(
@@ -258,265 +258,48 @@ async def get_current_user_email(x_user_email: str | None = Header(None, alias="
 #         return None
 
 
-def get_text_from_url_fallback(url):
-    """
-    Fallback function using requests + BeautifulSoup when Selenium fails.
-    Works well for static content but won't execute JavaScript.
-    """
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        }
-        response = requests.get(url, headers=headers, timeout=20)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'lxml')
-        for element in soup(["script", "style", "nav", "footer", "header", "aside", "form", "button"]):
-            element.decompose()
-        main_content = soup.find('main') or soup.find('article') or soup.find('div', role='main') or soup.body
-        text = main_content.get_text(separator='\n', strip=True) if main_content else soup.get_text(separator='\n', strip=True)
-        lines = (line.strip() for line in text.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        cleaned_text = '\n'.join(chunk for chunk in chunks if chunk)
-        print(f"Successfully loaded URL with BeautifulSoup fallback. Got {len(cleaned_text)} chars.")
-        return cleaned_text[:15000]
-    except requests.exceptions.Timeout:
-        print(f"Timeout error fetching URL {url} with fallback")
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"Scraping Error for {url} with fallback: {e}")
-        return None
-    except Exception as e:
-        print(f"Unexpected Scraping Error for {url} with fallback: {e}")
-        return None
-
-
 def get_text_from_url(url):
     """
     Uses Selenium to load the page (including JS) and extract text.
-    Falls back to BeautifulSoup if Selenium is not available or fails.
     """
     print(f"Attempting to load URL with Selenium: {url}")
     options = webdriver.ChromeOptions()
-    
-    # Production-ready Chrome options for headless operation
-    options.add_argument('--headless=new')  # Use new headless mode
-    options.add_argument('--no-sandbox')  # Required for Linux servers
-    options.add_argument('--disable-dev-shm-usage')  # Overcome limited resource problems
-    options.add_argument('--disable-gpu')  # Disable GPU hardware acceleration
-    options.add_argument('--disable-software-rasterizer')  # Disable software rasterization
-    options.add_argument('--disable-extensions')  # Disable extensions
-    options.add_argument('--disable-images')  # Don't load images (faster)
-    options.add_argument('--window-size=1920,1080')  # Set a standard window size
-    options.add_argument('--disable-blink-features=AutomationControlled')  # Avoid detection
-    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    
-    # Additional options for server environments
-    options.add_argument('--disable-setuid-sandbox')
-    # Note: --remote-debugging-port removed to avoid connection timeout issues
-    # Note: --single-process can cause stability issues, removed for better reliability
-    
-    # Set preferences
-    options.add_experimental_option('excludeSwitches', ['enable-logging'])
-    options.add_experimental_option('useAutomationExtension', False)
+    options.add_argument('--headless') # Run without opening a visible browser window
+    options.add_argument('--no-sandbox') # Often needed for Linux servers
+    options.add_argument('--disable-dev-shm-usage') # Often needed for Linux servers
+    options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36') # Set user agent
 
-    driver = None
+    driver = None # Initialize driver to None
     try:
-        import os
-        import shutil
-        
-        # Find Chrome/Chromium binary
-        chrome_paths = [
-            '/usr/bin/chromium-browser',
-            '/usr/bin/chromium',
-            '/usr/bin/google-chrome',
-            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        ]
-        
-        chrome_binary = None
-        for chrome_path in chrome_paths:
-            if os.path.exists(chrome_path) and os.access(chrome_path, os.X_OK):
-                chrome_binary = chrome_path
-                print(f"Found Chrome at {chrome_path}")
-                options.binary_location = chrome_path
-                break
-        
-        if not chrome_binary:
-            raise Exception("Could not find Chrome/Chromium binary. Falling back to BeautifulSoup.")
-        
-        # Try to get chromedriver
-        chromedriver_path = None
-        
-        # Method 1: Try ChromeDriverManager
-        try:
-            chromedriver_path = ChromeDriverManager().install()
-            print(f"ChromeDriverManager installed chromedriver at: {chromedriver_path}")
-        except Exception as manager_error:
-            print(f"ChromeDriverManager failed: {manager_error}")
-            # Method 2: Try to find chromedriver in common locations
-            chromedriver_paths = [
-                '/usr/bin/chromedriver',
-                '/usr/local/bin/chromedriver',
-                shutil.which('chromedriver'),
-            ]
-            for path in chromedriver_paths:
-                if path and os.path.exists(path) and os.access(path, os.X_OK):
-                    chromedriver_path = path
-                    print(f"Found chromedriver at: {path}")
-                    break
-        
-        if not chromedriver_path:
-            raise Exception("Could not find chromedriver. Falling back to BeautifulSoup.")
-        
-        # Create service with chromedriver
-        service = ChromeService(chromedriver_path)
-        
-        # Add retry logic for driver creation
-        max_retries = 2
-        for attempt in range(max_retries):
-            try:
-                driver = webdriver.Chrome(service=service, options=options)
-                print("Successfully created Chrome WebDriver")
-                break
-            except Exception as driver_error:
-                if attempt == max_retries - 1:
-                    raise driver_error
-                print(f"Driver creation attempt {attempt + 1} failed: {driver_error}, retrying...")
-                time.sleep(1)
+        # Automatically download and manage the ChromeDriver
+        service = ChromeService(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
 
-        # Set timeouts - increased for slow-loading pages
-        driver.set_page_load_timeout(60)  # Increased from 30 to 60 seconds
-        driver.implicitly_wait(10)  # Wait for elements to appear
-        driver.set_script_timeout(30)  # Timeout for JavaScript execution
-        
-        # Navigate to URL with timeout handling
-        print(f"Loading URL: {url}")
-        try:
-            driver.get(url)
-            print("Page loaded successfully")
-        except TimeoutException as timeout_error:
-            print(f"Page load timeout (60s exceeded): {timeout_error}")
-            print("Attempting to extract content from partially loaded page...")
-            # Sometimes the page loads enough HTML even if it times out
-            # We'll try to extract what we can from page_source
-            try:
-                page_source = driver.page_source
-                if page_source and len(page_source) > 100:
-                    print("Got page_source despite timeout, will extract from it")
-                else:
-                    raise timeout_error
-            except:
-                raise timeout_error
+        driver.set_page_load_timeout(30) # Wait up to 30 seconds for page to load
+        driver.get(url)
 
-        # Wait for JavaScript to potentially load content
-        # Shorter wait since page already loaded successfully
-        time.sleep(2)
+        # Wait a moment for JavaScript to potentially load content
+        time.sleep(3) 
 
-        # Extract text directly from page_source to avoid slow Selenium API calls
-        # This is faster and more reliable in server environments
-        print("Extracting text from page_source...")
-        try:
-            from bs4 import BeautifulSoup as BS
-            
-            # Get page source (fast, doesn't require round-trip to Chrome)
-            page_source = driver.page_source
-            
-            if not page_source or len(page_source) < 100:
-                print("Warning: Page source is too short, trying body.text...")
-                # Fallback to body.text if page_source is minimal
-                try:
-                    body_element = driver.find_element(By.TAG_NAME, 'body')
-                    text = body_element.text.strip()
-                    if text and len(text) > 10:
-                        lines = (line.strip() for line in text.splitlines())
-                        cleaned_text = '\n'.join(line for line in lines if line)
-                        print(f"Successfully extracted from body.text. Got {len(cleaned_text)} chars.")
-                        return cleaned_text[:15000]
-                except Exception as body_err:
-                    print(f"Could not get body.text: {body_err}")
-            
-            # Parse page_source with BeautifulSoup
-            soup = BS(page_source, 'html.parser')
-            
-            # Remove unwanted elements
-            for element in soup(["script", "style", "nav", "footer", "header", "aside", "form", "button", "noscript"]):
-                element.decompose()
-            
-            # Try to find main content areas
-            main_content = soup.find('main') or soup.find('article') or soup.find('div', {'role': 'main'}) or soup.find('body')
-            
-            if main_content:
-                text = main_content.get_text(separator='\n', strip=True)
-            else:
-                text = soup.get_text(separator='\n', strip=True)
-            
-            # Clean up the text
-            lines = (line.strip() for line in text.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-            cleaned_text = '\n'.join(chunk for chunk in chunks if chunk)
+        # Extract text from the body tag
+        body_element = driver.find_element(By.TAG_NAME, 'body')
+        # Basic cleanup - could be improved
+        text = body_element.text.strip() 
+        lines = (line.strip() for line in text.splitlines())
+        cleaned_text = '\n'.join(line for line in lines if line)
 
-            if not cleaned_text or len(cleaned_text.strip()) < 10:
-                print("Warning: Got minimal text, returning what we have")
-                # Return empty string rather than None so Gemini doesn't fail
-                cleaned_text = text[:15000] if text else ""
-            
-            print(f"Successfully loaded URL with Selenium. Got {len(cleaned_text)} chars.")
-            return cleaned_text[:15000]
-            
-        except Exception as extract_error:
-            print(f"Error extracting text from page_source: {extract_error}")
-            # Last resort: try to get anything from the driver
-            try:
-                print("Attempting emergency extraction...")
-                page_source = driver.page_source[:50000]  # Limit size
-                from bs4 import BeautifulSoup as BS
-                soup = BS(page_source, 'html.parser')
-                text = soup.get_text(separator=' ', strip=True)
-                print(f"Emergency extraction got {len(text)} chars.")
-                return text[:15000] if text else None
-            except Exception as emergency_err:
-                print(f"Emergency extraction also failed: {emergency_err}")
-                raise extract_error
+        print(f"Successfully loaded URL with Selenium. Got {len(cleaned_text)} chars.")
+        return cleaned_text[:15000]
 
-    except TimeoutException as e:
-        print(f"Selenium timeout error for URL {url}: {e}")
-        # Try to extract from page_source if driver exists
-        if driver:
-            try:
-                print("Attempting to extract from page_source after timeout...")
-                from bs4 import BeautifulSoup as BS
-                soup = BS(driver.page_source, 'html.parser')
-                for element in soup(["script", "style", "nav", "footer", "header", "aside", "form", "button"]):
-                    element.decompose()
-                main_content = soup.find('main') or soup.find('article') or soup.find('body')
-                text = main_content.get_text(separator='\n', strip=True) if main_content else soup.get_text(separator='\n', strip=True)
-                lines = (line.strip() for line in text.splitlines())
-                chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-                cleaned_text = '\n'.join(chunk for chunk in chunks if chunk)
-                if cleaned_text and len(cleaned_text) > 100:
-                    print(f"Successfully extracted text from timed-out page. Got {len(cleaned_text)} chars.")
-                    return cleaned_text[:15000]
-            except Exception as extract_err:
-                print(f"Could not extract from timed-out page: {extract_err}")
-        print("Falling back to BeautifulSoup...")
-        return get_text_from_url_fallback(url)
     except WebDriverException as e:
         print(f"Selenium WebDriver error for URL {url}: {e}")
-        print("Falling back to BeautifulSoup...")
-        return get_text_from_url_fallback(url)
+        return None
     except Exception as e:
         print(f"An unexpected error occurred processing URL {url} with Selenium: {e}")
-        print("Falling back to BeautifulSoup...")
-        return get_text_from_url_fallback(url)
+        return None
     finally:
         if driver:
-            try:
-                driver.quit()
-            except:
-                pass
+            driver.quit()
 
 
 # --- Gemini Configuration (from ai_test.py) ---
