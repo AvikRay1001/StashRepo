@@ -180,7 +180,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import WebDriverException, TimeoutException
 import time
 
 # --- Load keys from .env file ---
@@ -387,17 +387,33 @@ def get_text_from_url(url):
                 print(f"Driver creation attempt {attempt + 1} failed: {driver_error}, retrying...")
                 time.sleep(1)
 
-        # Set timeouts
-        driver.set_page_load_timeout(30)
-        driver.implicitly_wait(5)  # Wait for elements to appear
+        # Set timeouts - increased for slow-loading pages
+        driver.set_page_load_timeout(60)  # Increased from 30 to 60 seconds
+        driver.implicitly_wait(10)  # Wait for elements to appear
+        driver.set_script_timeout(30)  # Timeout for JavaScript execution
         
-        # Navigate to URL
+        # Navigate to URL with timeout handling
         print(f"Loading URL: {url}")
-        driver.get(url)
+        try:
+            driver.get(url)
+            print("Page loaded successfully")
+        except TimeoutException as timeout_error:
+            print(f"Page load timeout (60s exceeded): {timeout_error}")
+            print("Attempting to extract content from partially loaded page...")
+            # Sometimes the page loads enough HTML even if it times out
+            # We'll try to extract what we can from page_source
+            try:
+                page_source = driver.page_source
+                if page_source and len(page_source) > 100:
+                    print("Got page_source despite timeout, will extract from it")
+                else:
+                    raise timeout_error
+            except:
+                raise timeout_error
 
         # Wait for JavaScript to potentially load content
         # Increase wait time for dynamic content
-        time.sleep(5)
+        time.sleep(3)
 
         # Extract text from the body tag
         try:
@@ -444,6 +460,28 @@ def get_text_from_url(url):
             except:
                 raise extract_error
 
+    except TimeoutException as e:
+        print(f"Selenium timeout error for URL {url}: {e}")
+        # Try to extract from page_source if driver exists
+        if driver:
+            try:
+                print("Attempting to extract from page_source after timeout...")
+                from bs4 import BeautifulSoup as BS
+                soup = BS(driver.page_source, 'html.parser')
+                for element in soup(["script", "style", "nav", "footer", "header", "aside", "form", "button"]):
+                    element.decompose()
+                main_content = soup.find('main') or soup.find('article') or soup.find('body')
+                text = main_content.get_text(separator='\n', strip=True) if main_content else soup.get_text(separator='\n', strip=True)
+                lines = (line.strip() for line in text.splitlines())
+                chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                cleaned_text = '\n'.join(chunk for chunk in chunks if chunk)
+                if cleaned_text and len(cleaned_text) > 100:
+                    print(f"Successfully extracted text from timed-out page. Got {len(cleaned_text)} chars.")
+                    return cleaned_text[:15000]
+            except Exception as extract_err:
+                print(f"Could not extract from timed-out page: {extract_err}")
+        print("Falling back to BeautifulSoup...")
+        return get_text_from_url_fallback(url)
     except WebDriverException as e:
         print(f"Selenium WebDriver error for URL {url}: {e}")
         print("Falling back to BeautifulSoup...")
