@@ -14,11 +14,14 @@ SUPABASE_KEY = config('SUPABASE_KEY')
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI()
 
-# --- CORS Middleware ---
-origins = [
-    "http://localhost:3000",
-    "https://stash-frontend-chi.vercel.app"
-]
+# # --- CORS Middleware ---
+# origins = [
+#     "http://localhost:3000",
+#     "https://stash-frontend-chi.vercel.app"
+# ]
+
+origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
