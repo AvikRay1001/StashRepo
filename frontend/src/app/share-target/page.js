@@ -1,34 +1,42 @@
 'use client';
-
-// Make sure to import Suspense from React!
 import { useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-// This is the URL of your deployed backend
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stashbackend.onrender.com';
 
 function ShareTargetComponent() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
+    // Get the email from localStorage
+    const email = localStorage.getItem('stash_user_email');
+    if (!email) {
+      // If not logged in, open the app (which will show login)
+      window.open('/');
+      window.close();
+      return;
+    }
+
     const url = searchParams.get('url');
     const text = searchParams.get('text');
-    const sharedContent = url || text; // Prefer URL
+    const sharedContent = url || text;
 
     if (sharedContent) {
-      // Send the shared content to your backend
       fetch(`${API_URL}/v1/capture`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Email': email // <-- Send email as header
+        },
         body: JSON.stringify({
           type: url ? 'url' : 'text',
           content: sharedContent,
         }),
       })
-      .then(() => window.close()) // Close the share window on success
-      .catch(() => window.close()); // Also close on failure
+      .then(() => window.close())
+      .catch(() => window.close());
     } else {
-      window.close(); // No content, just close
+      window.close();
     }
   }, [searchParams]);
 
@@ -39,7 +47,6 @@ function ShareTargetComponent() {
   );
 }
 
-// You MUST wrap the component in <Suspense> for useSearchParams to work
 export default function ShareTargetPage() {
   return (
     <Suspense fallback={<div>Loading...</div>}>

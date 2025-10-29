@@ -1,340 +1,153 @@
-# from fastapi import FastAPI, HTTPException
-# from pydantic import BaseModel
-# from supabase import create_client, Client
-# from decouple import config # To read .env
-# from fastapi.middleware.cors import CORSMiddleware # For CORS
-
-# from clerk_sdk import Clerk
-# from clerk_sdk.jwt import JWT
-
-# # Load keys from .env file
-# SUPABASE_URL = config('SUPABASE_URL')
-# SUPABASE_KEY = config('SUPABASE_KEY')
-
-# # Check if keys are loaded
-# if not SUPABASE_URL or not SUPABASE_KEY:
-#     raise ValueError("Supabase URL and Key must be set in .env file")
-
-# supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# clerk_secret = config('CLERK_SECRET_KEY')
-# clerk = Clerk(secret_key=clerk_secret)
-# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-# app = FastAPI()
-
-# # --- Add CORS Middleware ---
-# # This allows your Next.js app (running on a different port/domain)
-# # to make requests to this FastAPI server.
-# origins = [
-#     "http://localhost:3000",
-#     "https://stash-frontend-chi.vercel.app"  # Your Next.js local dev URL
-#     # Add your deployed frontend URL here later
-#     # e.g., "https://your-frontend-app.vercel.app" 
-# ]
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=origins,
-#     allow_credentials=True,
-#     allow_methods=["*"], # Allows all methods (GET, POST, etc.)
-#     allow_headers=["*"], # Allows all headers
-# )
-# # ---------------------------
-
-# class CaptureItem(BaseModel):
-#     type: str    # e.g., "url"
-#     content: str # e.g., "https://example.com"
-
-# @app.post("/v1/capture")
-# async def capture_item(item: CaptureItem):
-#     """
-#     Receives an item from the PWA and saves it to the database.
-#     """
-#     try:
-#         data, count = supabase.table('items').insert({
-#             'content_type': item.type,
-#             'raw_content': item.content,
-#             'status': 'pending'
-#         }).execute()
-
-#         # Check for API-level errors from Supabase
-#         if data and len(data) > 1 and data[1]:
-#              return {"status": "success", "data": data[1]}
-#         else:
-#             # Handle cases where insert might not return data as expected
-#             return {"status": "success", "data": "Item captured"}
-
-#     except Exception as e:
-#         print(f"Error capturing item: {e}") # Log error to server
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/v1/library")
-# async def get_library():
-#     """
-#     Retrieves all items from the database to display in the UI.
-#     """
-#     try:
-#         # Select all columns, order by creation date (newest first)
-#         data, count = supabase.table('items').select('*').order('created_at', desc=True).execute()
-
-#         # data[1] contains the list of items
-#         return {"items": data[1]} 
-#     except Exception as e:
-#         print(f"Error fetching library: {e}") # Log error to server
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/")
-# async def root():
-#     return {"message": "Stash Backend API is running!"}
-
-
-
-
-
-
-
-# from fastapi import FastAPI, HTTPException, Depends
-# from pydantic import BaseModel
-# from supabase import create_client, Client
-# from decouple import config # To read .env
-# from fastapi.middleware.cors import CORSMiddleware # For CORS
-# from fastapi.security import OAuth2PasswordBearer
-
-# # --- FIX: CORRECT CLERK IMPORTS ---
-# from clerk_backend_api import Clerk, ClerkAPIError
-# # ------------------------------------
-
-# # Load keys from .env file
-# SUPABASE_URL = config('SUPABASE_URL')
-# SUPABASE_KEY = config('SUPABASE_KEY')
-# CLERK_SECRET_KEY = config('CLERK_SECRET_KEY') 
-
-# # Check if keys are loaded
-# if not SUPABASE_URL or not SUPABASE_KEY:
-#     raise ValueError("Supabase URL and Key must be set in .env file")
-# if not CLERK_SECRET_KEY:
-#     raise ValueError("CLERK_SECRET_KEY must be set in .env file")
-
-# # --- CLIENT SETUPS ---
-# supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-# clerk_client = Clerk(bearer_auth=CLERK_SECRET_KEY) # <-- FIX: Use bearer_auth
-# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-# # ---------------------
-
-# app = FastAPI()
-
-# # --- (Your CORS Middleware block) ... ---
-# origins = [
-#     "http://localhost:3000",
-#     "https://stash-frontend-chi.vercel.app"
-# ]
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=origins,
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-# # ----------------------------------------
-
-# # --- UPDATED AUTH DEPENDENCY (Guard) ---
-# async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
-#     """
-#     Validates the Clerk JWT and returns the user ID (sub).
-#     """
-#     try:
-#         # FIX: Verify the token using the session API
-#         session = clerk_client.sessions.verify_token(token=token)
-
-#         # FIX: Return the user ID from the session object
-#         return session.user_id 
-
-#     except ClerkAPIError as e:
-#         # Handle expired tokens, invalid tokens, etc.
-#         print(f"Auth Error (ClerkAPIError): {e}")
-#         raise HTTPException(status_code=401, detail=f"Invalid credentials: {e.errors}")
-#     except Exception as e:
-#         print(f"Auth Error (Generic): {e}")
-#         raise HTTPException(status_code=401, detail="Invalid credentials")
-# # ---------------------------
-
-# class CaptureItem(BaseModel):
-#     type: str    # e.g., "url"
-#     content: str # e.g., "https://example.com"
-
-# @app.post("/v1/capture")
-# async def capture_item(
-#     item: CaptureItem, 
-#     user_id: str = Depends(get_current_user_id) # <-- PROTECTED
-# ):
-#     """
-#     Receives an item from the PWA and saves it to the database
-#     linked to the authenticated user.
-#     """
-#     try:
-#         data, count = supabase.table('items').insert({
-#             'content_type': item.type,
-#             'raw_content': item.content,
-#             'status': 'pending',
-#             'user_id': user_id  # <-- ADD USER ID TO THE ROW
-#         }).execute()
-
-#         # Check for API-level errors from Supabase
-#         if data and len(data) > 1 and data[1]:
-#              return {"status": "success", "data": data[1]}
-#         else:
-#             return {"status": "success", "data": "Item captured"}
-
-#     except Exception as e:
-#         print(f"Error capturing item: {e}") # Log error to server
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/v1/library")
-# async def get_library(
-#     user_id: str = Depends(get_current_user_id) # <-- PROTECTED
-# ):
-#     """
-#     Retrieves all items from the database that belong
-#     to the authenticated user.
-#     """
-#     try:
-#         # Select all columns, order by creation date (newest first)
-#         # ONLY where the user_id matches the authenticated user.
-#         data, count = supabase.table('items') \
-#             .select('*') \
-#             .eq('user_id', user_id) \
-#             .order('created_at', desc=True) \
-#             .execute()
-        
-#         # data[1] contains the list of items
-#         return {"items": data[1]} 
-#     except Exception as e:
-#         print(f"Error fetching library: {e}") # Log error to server
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/")
-# async def root():
-#     return {"message": "Stash Backend API is running!"}
-
-
-
-
-
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 from supabase import create_client, Client
-from decouple import config # To read .env
-from fastapi.middleware.cors import CORSMiddleware # For CORS
-from fastapi.security import OAuth2PasswordBearer
+from decouple import config
+from fastapi.middleware.cors import CORSMiddleware
 
-# --- CORRECT CLERK IMPORT ---
-from clerk_backend_api import Clerk
-# --- ClerkAPIError IMPORT REMOVED ---
+# --- No more JWT, Clerk, or Passlib imports ---
 
 # Load keys from .env file
 SUPABASE_URL = config('SUPABASE_URL')
 SUPABASE_KEY = config('SUPABASE_KEY')
-CLERK_SECRET_KEY = config('CLERK_SECRET_KEY') 
 
-# Check if keys are loaded
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise ValueError("Supabase URL and Key must be set in .env file")
-if not CLERK_SECRET_KEY:
-    raise ValueError("CLERK_SECRET_KEY must be set in .env file")
-
-# --- CLIENT SETUPS ---
+# --- CLIENT SETUP ---
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-clerk_client = Clerk(bearer_auth=CLERK_SECRET_KEY)
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-# ---------------------
-
 app = FastAPI()
 
-# --- Add CORS Middleware ---
+# --- CORS Middleware ---
 origins = [
     "http://localhost:3000",
     "https://stash-frontend-chi.vercel.app"
 ]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods (GET, POST, etc.)
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-# ---------------------------
 
-# --- UPDATED AUTH DEPENDENCY (Guard) ---
-async def get_current_user_id(token: str = Depends(oauth2_scheme)) -> str:
-    """
-    Validates the Clerk JWT and returns the user ID (sub).
-    """
-    try:
-        # Verify the token using the session API
-        session = clerk_client.sessions.verify(token=token)
-        
-        # Return the user ID from the session object
-        return session.user_id 
-    
-    # --- FIX: Catch the generic Exception ---
-    except Exception as e:
-        # This will catch any error, including auth errors
-        print(f"Auth Error (Generic): {e}")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-# ---------------------------
+# --- Pydantic Models ---
+class UserAuth(BaseModel):
+    email: str
+    password: str
 
 class CaptureItem(BaseModel):
-    type: str    # e.g., "url"
-    content: str # e.g., "https://example.com"
+    type: str
+    content: str
 
+# --- Simple Auth "Guard" ---
+async def get_current_user_email(x_user_email: str | None = Header(None, alias="X-User-Email")) -> str:
+    """
+    Gets the user's email from the X-User-Email header.
+    For the hackathon, we just trust this header.
+    """
+    if not x_user_email:
+        raise HTTPException(status_code=401, detail="X-User-Email header missing")
+    return x_user_email
+
+# --- Endpoint: Signup ---
+# --- Endpoint: Signup (FIXED) ---
+@app.post("/v1/signup")
+async def signup(user: UserAuth):
+    """
+    Creates a new user in the 'users' table.
+    Handles Supabase v2 insert response correctly.
+    """
+    try:
+        # Execute the insert operation
+        response = supabase.table('users').insert({
+            'email': user.email,
+            'password': user.password # INSECURE: Storing plain text
+        }).execute()
+
+        # --- FIX: Check the response data correctly ---
+        # The actual inserted data is in response.data
+        if response.data and len(response.data) > 0:
+            # Successfully inserted, return the email
+            return {"email": response.data[0]['email']}
+        else:
+            # If response.data is empty or missing, something went wrong
+            # Log the full response if possible for debugging
+            print(f"Signup Supabase Error: Unexpected response structure: {response}")
+            raise HTTPException(status_code=500, detail="Signup failed on database insert.")
+
+    except HTTPException as http_exc:
+         # Re-raise HTTP exceptions directly (like 409 Conflict)
+         raise http_exc
+    except Exception as e:
+        # Check specifically for the unique constraint violation from Postgres/Supabase
+        if 'duplicate key value violates unique constraint "users_email_key"' in str(e):
+            raise HTTPException(status_code=409, detail="Email already exists")
+        
+        # Log other types of errors
+        print(f"Signup Error (Generic): {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred during signup.")
+
+# --- Endpoint: Login ---
+@app.post("/v1/login")
+async def login(user: UserAuth):
+    """
+    Logs a user in by checking email and password.
+    """
+    try:
+        data, count = supabase.table('users') \
+            .select('*') \
+            .eq('email', user.email) \
+            .limit(1) \
+            .execute()
+
+        if not data or not data[1]:
+            raise HTTPException(status_code=404, detail="Email not found")
+        
+        db_user = data[1][0]
+
+        if db_user['password'] == user.password:
+            return {"email": db_user['email']}
+        else:
+            raise HTTPException(status_code=401, detail="Incorrect password")
+    except Exception as e:
+        if isinstance(e, HTTPException): raise e
+        print(f"Login Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Endpoint: Capture Item ---
 @app.post("/v1/capture")
 async def capture_item(
     item: CaptureItem, 
-    user_id: str = Depends(get_current_user_id) # <-- PROTECTED
+    user_email: str = Depends(get_current_user_email) # Use the simple guard
 ):
-    """
-    Receives an item from the PWA and saves it to the database
-    linked to the authenticated user.
-    """
     try:
         data, count = supabase.table('items').insert({
             'content_type': item.type,
             'raw_content': item.content,
             'status': 'pending',
-            'user_id': user_id  # <-- ADD USER ID TO THE ROW
+            'user_email': user_email  # Use email as the foreign key
         }).execute()
-
-        # Check for API-level errors from Supabase
+        
         if data and len(data) > 1 and data[1]:
              return {"status": "success", "data": data[1]}
         else:
             return {"status": "success", "data": "Item captured"}
-
     except Exception as e:
-        print(f"Error capturing item: {e}") # Log error to server
+        print(f"Error capturing item: {e}") 
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- Endpoint: Get Library ---
 @app.get("/v1/library")
 async def get_library(
-    user_id: str = Depends(get_current_user_id) # <-- PROTECTED
+    user_email: str = Depends(get_current_user_email) # Use the simple guard
 ):
-    """
-    Retrieves all items from the database that belong
-    to the authenticated user.
-    """
     try:
         data, count = supabase.table('items') \
             .select('*') \
-            .eq('user_id', user_id) \
+            .eq('user_email', user_email) \
             .order('created_at', desc=True) \
             .execute()
         
         return {"items": data[1]} 
     except Exception as e:
-        print(f"Error fetching library: {e}") # Log error to server
+        print(f"Error fetching library: {e}") 
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")

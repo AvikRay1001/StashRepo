@@ -3,7 +3,6 @@ uvicorn
 supabase
 python-decouple
 fastapi-cors
-clerk-backend-api  # <-- This is the correct, modern package
 beautifulsoup4
 lxml
 google-generativeai
