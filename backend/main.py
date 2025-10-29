@@ -202,7 +202,7 @@ app = FastAPI()
 # --- CORS Middleware ---
 origins = [
     "http://localhost:3000",
-    "https://stash-frontend-chi.vercel.app"
+    "https://stashfronrtend.vercel.app"
 ]
 
 app.add_middleware(
