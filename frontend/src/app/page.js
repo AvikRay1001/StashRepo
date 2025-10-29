@@ -109,25 +109,75 @@ function StashApp() {
   const [error, setError] = useState(null);
   const [newItemUrl, setNewItemUrl] = useState('');
 
+  // async function fetchItems() {
+  //   setLoading(true);
+  //   setError(null);
+  //   try {
+  //     const res = await fetch(`${API_URL}/v1/library`, {
+  //       headers: {
+  //         'X-User-Email': userEmail // <-- Send email as header
+  //       }
+  //     });
+  //     if (!res.ok) {
+  //       throw new Error(`Failed to fetch (Error ${res.status})`);
+  //     }
+  //     const data = await res.json();
+  //     setItems(data.items || []);
+  //   } catch (err) {
+  //     setError(err.message);
+  //   }
+  //   setLoading(false);
+  // }
+
+
   async function fetchItems() {
     setLoading(true);
     setError(null);
+    console.log("fetchItems called. User email:", userEmail); // Log email
+
+    // --- Add check for userEmail ---
+    if (!userEmail) {
+        console.error("fetchItems called without userEmail!");
+        setError("User email not available.");
+        setLoading(false);
+        return; // Don't proceed if email is missing
+    }
+    // -----------------------------
+
     try {
+      console.log("Attempting to fetch:", `${API_URL}/v1/library`); // Log URL
       const res = await fetch(`${API_URL}/v1/library`, {
         headers: {
-          'X-User-Email': userEmail // <-- Send email as header
+          'X-User-Email': userEmail 
         }
       });
+      
+      console.log("Fetch response status:", res.status); // Log status code
+
       if (!res.ok) {
-        throw new Error(`Failed to fetch (Error ${res.status})`);
+        // Try to get error detail from backend if available
+        let errorDetail = `Failed to fetch (Error ${res.status})`;
+        try {
+            const errData = await res.json();
+            errorDetail = errData.detail || errorDetail;
+        } catch (jsonError) {
+            // Backend didn't send JSON or response was empty
+        }
+        throw new Error(errorDetail); 
       }
+      
       const data = await res.json();
+      console.log("Fetched items:", data.items); // Log success data
       setItems(data.items || []);
+
     } catch (err) {
-      setError(err.message);
+      console.error("Error in fetchItems:", err); // Log the actual error object
+      setError(err.message || "Load failed due to network or CORS issue."); // Set more specific error
     }
     setLoading(false);
   }
+
+  
 
   useEffect(() => {
     if (userEmail) {
