@@ -314,7 +314,7 @@ def get_text_from_url(url):
     
     # Additional options for server environments
     options.add_argument('--disable-setuid-sandbox')
-    options.add_argument('--remote-debugging-port=9222')  # Allow remote debugging if needed
+    # Note: --remote-debugging-port removed to avoid connection timeout issues
     # Note: --single-process can cause stability issues, removed for better reliability
     
     # Set preferences
@@ -412,52 +412,73 @@ def get_text_from_url(url):
                 raise timeout_error
 
         # Wait for JavaScript to potentially load content
-        # Increase wait time for dynamic content
-        time.sleep(3)
+        # Shorter wait since page already loaded successfully
+        time.sleep(2)
 
-        # Extract text from the body tag
+        # Extract text directly from page_source to avoid slow Selenium API calls
+        # This is faster and more reliable in server environments
+        print("Extracting text from page_source...")
         try:
-            # Wait a bit more for dynamic content
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
+            from bs4 import BeautifulSoup as BS
             
-            # Wait for body to be present
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, 'body'))
-            )
+            # Get page source (fast, doesn't require round-trip to Chrome)
+            page_source = driver.page_source
             
-            body_element = driver.find_element(By.TAG_NAME, 'body')
-            text = body_element.text.strip()
+            if not page_source or len(page_source) < 100:
+                print("Warning: Page source is too short, trying body.text...")
+                # Fallback to body.text if page_source is minimal
+                try:
+                    body_element = driver.find_element(By.TAG_NAME, 'body')
+                    text = body_element.text.strip()
+                    if text and len(text) > 10:
+                        lines = (line.strip() for line in text.splitlines())
+                        cleaned_text = '\n'.join(line for line in lines if line)
+                        print(f"Successfully extracted from body.text. Got {len(cleaned_text)} chars.")
+                        return cleaned_text[:15000]
+                except Exception as body_err:
+                    print(f"Could not get body.text: {body_err}")
             
-            if not text or len(text.strip()) < 10:
-                print("Warning: Got minimal or no text from Selenium, trying page_source")
-                # Fallback: get text from page source
-                from bs4 import BeautifulSoup as BS
-                soup = BS(driver.page_source, 'html.parser')
-                for element in soup(["script", "style", "nav", "footer", "header", "aside", "form", "button"]):
-                    element.decompose()
-                main_content = soup.find('main') or soup.find('article') or soup.find('body')
-                text = main_content.get_text(separator='\n', strip=True) if main_content else ''
+            # Parse page_source with BeautifulSoup
+            soup = BS(page_source, 'html.parser')
             
+            # Remove unwanted elements
+            for element in soup(["script", "style", "nav", "footer", "header", "aside", "form", "button", "noscript"]):
+                element.decompose()
+            
+            # Try to find main content areas
+            main_content = soup.find('main') or soup.find('article') or soup.find('div', {'role': 'main'}) or soup.find('body')
+            
+            if main_content:
+                text = main_content.get_text(separator='\n', strip=True)
+            else:
+                text = soup.get_text(separator='\n', strip=True)
+            
+            # Clean up the text
             lines = (line.strip() for line in text.splitlines())
-            cleaned_text = '\n'.join(line for line in lines if line)
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            cleaned_text = '\n'.join(chunk for chunk in chunks if chunk)
 
+            if not cleaned_text or len(cleaned_text.strip()) < 10:
+                print("Warning: Got minimal text, returning what we have")
+                # Return empty string rather than None so Gemini doesn't fail
+                cleaned_text = text[:15000] if text else ""
+            
             print(f"Successfully loaded URL with Selenium. Got {len(cleaned_text)} chars.")
             return cleaned_text[:15000]
+            
         except Exception as extract_error:
-            print(f"Error extracting text: {extract_error}")
-            # Try one more time with page_source
+            print(f"Error extracting text from page_source: {extract_error}")
+            # Last resort: try to get anything from the driver
             try:
+                print("Attempting emergency extraction...")
+                page_source = driver.page_source[:50000]  # Limit size
                 from bs4 import BeautifulSoup as BS
-                soup = BS(driver.page_source, 'html.parser')
-                for element in soup(["script", "style"]):
-                    element.decompose()
-                text = soup.get_text(separator='\n', strip=True)
-                lines = (line.strip() for line in text.splitlines())
-                cleaned_text = '\n'.join(line for line in lines if line)
-                print(f"Extracted text from page_source. Got {len(cleaned_text)} chars.")
-                return cleaned_text[:15000]
-            except:
+                soup = BS(page_source, 'html.parser')
+                text = soup.get_text(separator=' ', strip=True)
+                print(f"Emergency extraction got {len(text)} chars.")
+                return text[:15000] if text else None
+            except Exception as emergency_err:
+                print(f"Emergency extraction also failed: {emergency_err}")
                 raise extract_error
 
     except TimeoutException as e:
