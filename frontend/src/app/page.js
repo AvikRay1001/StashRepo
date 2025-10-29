@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useUser } from './UserContext';
 
 // Use localhost for local testing
-const API_URL = 'http://localhost:8000'; 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://stashbackend.onrender.com'; 
 
 // --- NEW Login/Signup Component ---
 function LoginScreen() {
@@ -177,7 +177,7 @@ function StashApp() {
     setLoading(false);
   }
 
-  
+
 
   useEffect(() => {
     if (userEmail) {
