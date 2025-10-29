@@ -6,3 +6,6 @@ fastapi-cors
 beautifulsoup4
 lxml
 google-generativeai
+requests
+selenium
+webdriver-manager
